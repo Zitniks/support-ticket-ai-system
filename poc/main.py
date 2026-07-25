@@ -8,13 +8,16 @@ PoC-монолит: FastAPI + PostgreSQL, без Kafka и отдельных с�
                                     -> (risk low/medium -> generate_stub -> (confidence low -> escalate)
                                                                           -> (confidence high -> ответ клиенту))
 """
-from fastapi import FastAPI, Depends
+from typing import List, Optional
+
+from fastapi import Depends, FastAPI, Header
 from sqlalchemy.orm import Session
 
 import models
 from db import Base, engine, get_db
 from ml_stub import classify_stub, generate_stub
-from schemas import TicketCreate, TicketResponse
+from pii import redact
+from schemas import AuditLogEntry, TicketCreate, TicketResponse
 
 GENERATION_CONFIDENCE_THRESHOLD = 0.6
 
@@ -29,8 +32,18 @@ def log_event(db: Session, ticket_id, event: str, details: str = ""):
 
 
 @app.post("/tickets", response_model=TicketResponse)
-def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
+def create_ticket(
+    payload: TicketCreate,
+    db: Session = Depends(get_db),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    if idempotency_key:
+        existing = db.query(models.Ticket).filter_by(idempotency_key=idempotency_key).first()
+        if existing:
+            return existing
+
     ticket = models.Ticket(
+        idempotency_key=idempotency_key,
         channel=payload.channel,
         text=payload.text,
         user_category=payload.user_category,
@@ -39,7 +52,7 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
-    log_event(db, ticket.id, "ticket_received", payload.channel)
+    log_event(db, ticket.id, "ticket_received", f"channel={payload.channel} text={redact(payload.text)[:200]}")
 
     classification = classify_stub(payload.text, payload.user_category)
     ticket.predicted_category = classification.category
@@ -79,3 +92,13 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
 @app.get("/tickets/{ticket_id}", response_model=TicketResponse)
 def get_ticket(ticket_id, db: Session = Depends(get_db)):
     return db.query(models.Ticket).get(ticket_id)
+
+
+@app.get("/tickets/{ticket_id}/audit", response_model=List[AuditLogEntry])
+def get_ticket_audit(ticket_id, db: Session = Depends(get_db)):
+    return (
+        db.query(models.AuditLog)
+        .filter_by(ticket_id=ticket_id)
+        .order_by(models.AuditLog.created_at)
+        .all()
+    )
