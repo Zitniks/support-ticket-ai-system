@@ -1,4 +1,4 @@
-"""Тесты L0RuleMatcher (перенесены из rule_matcher.ipynb)."""
+"""Тесты L0RuleMatcher"""
 import pytest
 
 from rule_matcher import L0RuleMatcher

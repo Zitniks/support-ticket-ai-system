@@ -42,3 +42,28 @@ curl -s -X POST http://localhost:8000/tickets \
   -H "Idempotency-Key: demo-1" \
   -d '{"channel": "chat", "text": "Не прошла оплата картой", "user_category": "billing"}'
 ```
+
+## Тесты
+
+`test_rule_matcher.py` — юнит-тесты L0RuleMatcher (не требуют БД):
+
+```
+pip install -r requirements-dev.txt
+pytest test_rule_matcher.py -v
+```
+
+`test_e2e.py` — гоняет API через `TestClient` и проверяет не только HTTP-ответ,
+но и что реально записалось в `tickets`/`audit_log`. Требует поднятую Postgres:
+
+```
+docker compose up -d db
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/support_poc pytest test_e2e.py -v
+```
+
+Либо внутри контейнера api (там уже есть доступ к `db` по имени сервиса):
+
+```
+docker compose up -d
+docker compose exec api pip install pytest httpx
+docker compose exec -e DATABASE_URL=postgresql://postgres:postgres@db:5432/support_poc api pytest test_e2e.py -v
+```
