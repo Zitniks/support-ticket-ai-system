@@ -48,7 +48,7 @@ def classify_stub(text: str, user_category: Optional[str] = None) -> Classificat
     elif l0_result.category is not None:
         risk = "low"
     else:
-        risk = random.choice(["low", "medium"])  # L1 не реализован — placeholder
+        risk = "medium"  # L1 не реализован — детерминированный placeholder вместо random
 
     return ClassificationResult(category=category, risk=risk, confidence=confidence)
 
